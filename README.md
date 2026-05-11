@@ -1,4 +1,3 @@
-
  
  
 INAV Flight View: Advanced Blackbox Telemetry Visualization
@@ -9,7 +8,8 @@ INAV Flight View: Advanced Blackbox Telemetry Visualization
 INAV Flight View is a high-performance, intuitive forensic tool designed for pilots who demand deep insights into their flight data without the complexity of traditional log analyzers. Engineered for both stability and visual excellence, it transforms raw Blackbox telemetry into a rich, interactive 3D environment, allowing you to relive every maneuver with surgical precision.
  
 <img width="1890" height="1048" alt="image" src="https://github.com/user-attachments/assets/a3e27c4d-3dd1-456c-a482-a544302a8aed" />
- 
+
+Note: Maps are downloaded from ESRI World Imagery, Free for Non-Commercial Use.
  
  
 Key Features:
