@@ -48,7 +48,7 @@ import pandas as pd
 import numpy as np
 
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QApplication,
-                             QHBoxLayout, QPushButton, QSlider, QLabel, QFileDialog, QSplitter, QComboBox, QCheckBox, QSizePolicy, QGridLayout, QMessageBox, QDialog, QProgressDialog)
+                             QHBoxLayout, QPushButton, QSlider, QLabel, QFileDialog, QSplitter, QComboBox, QCheckBox, QSizePolicy, QGridLayout, QMessageBox, QDialog, QProgressDialog, QLineEdit)
 from PyQt6.QtCore import QTimer, QRect, QPoint, QElapsedTimer, QThread, pyqtSignal, QEvent, QUrl, Qt
 from PyQt6.QtGui import QPalette, QColor, QPainter, QPen, QFont, QDesktopServices
 
@@ -59,6 +59,7 @@ from map_provider import MapProvider
 from param_selector import ParameterSelector
 from rc_overlay import RCSticksWidget
 from flag_viewer import FlagViewer
+from custom_url_dialog import CustomUrlDialog
 
 import matplotlib
 matplotlib.rcParams['font.size'] = 8
@@ -693,11 +694,7 @@ class MainWindow(QMainWindow):
         self.chk_map.stateChanged.connect(self.toggle_map)
         viewer_controls.addWidget(self.chk_map)
         
-        self.chk_extra_area = QCheckBox("Extra Map Area")
-        self.chk_extra_area.setChecked(True)
-        self.chk_extra_area.setStyleSheet("color: #888888; font-size: 7.5pt;")
-        self.chk_extra_area.stateChanged.connect(self.toggle_extra_area)
-        viewer_controls.addWidget(self.chk_extra_area)
+
         
         viewer_controls.addSpacing(10)
         lbl_opacity = QLabel("Map Opacity:")
@@ -707,13 +704,28 @@ class MainWindow(QMainWindow):
         self.slider_map_opacity = QSlider(Qt.Orientation.Horizontal)
         self.slider_map_opacity.setRange(0, 100)
         self.slider_map_opacity.setValue(47)
-        self.slider_map_opacity.setFixedWidth(80)
+        self.slider_map_opacity.setFixedWidth(60)
         self.slider_map_opacity.setStyleSheet("""
             QSlider::groove:horizontal { height: 4pt; background: #333; border-radius: 2pt; }
             QSlider::handle:horizontal { background: #888; width: 12pt; height: 12pt; margin: -4px 0; border-radius: 6pt; }
         """)
         self.slider_map_opacity.valueChanged.connect(self.on_map_opacity_changed)
         viewer_controls.addWidget(self.slider_map_opacity)
+        
+        viewer_controls.addSpacing(10)
+        self.combo_map_provider = QComboBox()
+        self.combo_map_provider.addItems(["Satellite (ESRI)", "Street (OSM)", "MapProxy / Custom"])
+        self.combo_map_provider.setFixedWidth(130)
+        self.combo_map_provider.setStyleSheet("QComboBox { background: #333; color: white; border: 1px solid #555; border-radius: 4pt; padding: 2pt 5pt; }")
+        self.combo_map_provider.currentTextChanged.connect(self.on_map_provider_changed)
+        viewer_controls.addWidget(self.combo_map_provider)
+
+        self.btn_set_url = QPushButton("Set URL")
+        self.btn_set_url.setFixedWidth(100)
+        self.btn_set_url.setStyleSheet("color: #00aaff; font-weight: bold; background-color: #222; border: 1px solid #444;")
+        self.btn_set_url.setVisible(False)
+        self.btn_set_url.clicked.connect(self.open_custom_url_dialog)
+        viewer_controls.addWidget(self.btn_set_url)
         
         viewer_controls.addStretch()
         
@@ -809,6 +821,7 @@ class MainWindow(QMainWindow):
 
     def load_config(self):
         """Loads persistent settings from defaults.cfg."""
+        self._is_loading = True
         import os
         config_path = "defaults.cfg"
         
@@ -826,6 +839,7 @@ class MainWindow(QMainWindow):
         
         if not os.path.exists(config_path):
             self.last_log_dir = ""
+            self._is_loading = False
             return
         self.last_log_dir = ""
         
@@ -860,10 +874,19 @@ class MainWindow(QMainWindow):
             # Map Controls
             if "show_map" in config:
                 self.chk_map.setChecked(config["show_map"])
-            if "extra_area" in config:
-                self.chk_extra_area.setChecked(config["extra_area"])
+
             if "map_opacity" in config:
                 self.slider_map_opacity.setValue(config["map_opacity"])
+            if "map_provider" in config:
+                self.combo_map_provider.setCurrentText(config["map_provider"])
+            if "custom_map_urls" in config:
+                self.custom_map_urls = config["custom_map_urls"]
+            else:
+                self.custom_map_urls = []
+            if "mapproxy_url" in config:
+                self.current_mapproxy_url = config["mapproxy_url"]
+            else:
+                self.current_mapproxy_url = ""
             if "show_fpv" in config:
                 self.chk_fpv.setChecked(config["show_fpv"])
             if "show_sticks" in config:
@@ -921,9 +944,16 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             print(f"Error loading config: {e}")
+        finally:
+            self._is_loading = False
 
     def save_config(self):
         """Saves current GUI state to defaults.cfg."""
+        if getattr(self, '_is_loading', False):
+            return
+        
+
+
         config = {
             "speed_index": self.speed_selector.currentIndex(),
             "version_index": self.version_selector.currentIndex(),
@@ -933,10 +963,13 @@ class MainWindow(QMainWindow):
             "invert_pitch": self.chk_inv_pitch.isChecked(),
             "invert_yaw": self.chk_inv_yaw.isChecked(),
             "show_map": self.chk_map.isChecked(),
-            "extra_area": self.chk_extra_area.isChecked(),
+            "extra_area": True,
             "show_fpv": self.chk_fpv.isChecked(),
             "show_sticks": self.chk_sticks.isChecked(),
             "map_opacity": self.slider_map_opacity.value(),
+            "map_provider": self.combo_map_provider.currentText(),
+            "mapproxy_url": getattr(self, 'current_mapproxy_url', ''),
+            "custom_map_urls": getattr(self, 'custom_map_urls', []),
             "trail_param": self.combo_path_param.currentText(),
             "last_log_dir": getattr(self, 'last_log_dir', ''),
             "blackbox_decode_path": getattr(self, 'blackbox_decode_path', None),
@@ -1247,10 +1280,6 @@ class MainWindow(QMainWindow):
                 pos = self.viewer_3d.mapToGlobal(QPoint(self.viewer_3d.width(), 0))
                 self.rc_overlay.move(pos.x() - self.rc_overlay.width(), pos.y())
 
-    def toggle_extra_area(self, state):
-        # Reload only the map with the new bounds
-        self.trigger_map_update()
-
     def trigger_map_update(self):
         if not hasattr(self, 'data_parser') or self.df is None:
             return
@@ -1261,20 +1290,24 @@ class MainWindow(QMainWindow):
             
         min_lat, max_lat, min_lon, max_lon = bounds
         
-        # Double the area if Extra Area is checked
-        if self.chk_extra_area.isChecked():
-            lat_center = (min_lat + max_lat) / 2.0
-            lon_center = (min_lon + max_lon) / 2.0
-            lat_span = (max_lat - min_lat) * 2.0
-            lon_span = (max_lon - min_lon) * 2.0
-            min_lat, max_lat = lat_center - lat_span/2.0, lat_center + lat_span/2.0
-            min_lon, max_lon = lon_center - lon_span/2.0, lon_center + lon_span/2.0
+        # Always double the map area to provide better context around the flight path
+        lat_center = (min_lat + max_lat) / 2.0
+        lon_center = (min_lon + max_lon) / 2.0
+        lat_span = (max_lat - min_lat) * 2.0
+        lon_span = (max_lon - min_lon) * 2.0
+        min_lat, max_lat = lat_center - lat_span/2.0, lat_center + lat_span/2.0
+        min_lon, max_lon = lon_center - lon_span/2.0, lon_center + lon_span/2.0
             
+        # Update map provider settings before fetching
+        current_custom_url = getattr(self, 'current_mapproxy_url', '')
+        self.map_provider.set_provider(self.combo_map_provider.currentText(), current_custom_url)
+
         # Cancel existing worker if any
         if self.map_worker and self.map_worker.isRunning():
             self.map_worker.terminate()
             self.map_worker.wait()
             
+        self.lbl_map_progress.setStyleSheet("color: #00aaff; font-size: 7.5pt; font-weight: bold; margin-right: 7.5pt;")
         self.lbl_map_progress.setText("Downloading Map...")
         self.lbl_map_progress.setVisible(True)
             
@@ -1290,7 +1323,12 @@ class MainWindow(QMainWindow):
 
     def on_map_error(self, err):
         print(f"Map Worker Error: {err}")
-        self.lbl_map_progress.setVisible(False)
+        if "Could not connect to map provider" in err:
+            self.lbl_map_progress.setStyleSheet("color: #ff5555; font-size: 7.5pt; font-weight: bold; margin-right: 7.5pt;")
+            self.lbl_map_progress.setText("Invalid URL / Offline")
+            self.lbl_map_progress.setVisible(True)
+        else:
+            self.lbl_map_progress.setVisible(False)
 
     def on_map_ready(self, map_path, map_bounds):
         self.lbl_map_progress.setVisible(False)
@@ -1308,6 +1346,21 @@ class MainWindow(QMainWindow):
     def on_map_opacity_changed(self, value):
         opacity = value / 100.0
         self.viewer_3d.set_map_opacity(opacity)
+
+    def on_map_provider_changed(self, provider):
+        self.btn_set_url.setVisible(provider == "MapProxy / Custom")
+        self.trigger_map_update()
+        self.save_config()
+
+    def open_custom_url_dialog(self):
+        urls = getattr(self, 'custom_map_urls', [])
+        current = getattr(self, 'current_mapproxy_url', '')
+        dlg = CustomUrlDialog(self, config_urls=urls, current_url=current)
+        if dlg.exec():
+            self.current_mapproxy_url = dlg.selected_url
+            self.custom_map_urls = dlg.get_urls()
+            self.trigger_map_update()
+            self.save_config()
 
 
     def on_inversion_changed(self, checked):

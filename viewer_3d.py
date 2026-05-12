@@ -148,8 +148,8 @@ class Viewer3D(QWidget):
         
         try:
             texture = pv.read_texture(os.path.abspath(texture_path))
-            # Use high ambient lighting to ensure the texture is bright
-            self.map_actor = self.plotter.add_mesh(plane, texture=texture, name="map", lighting=True, ambient=1.0, 
+            # Use lighting=False so map textures show their true colors and don't get blown out
+            self.map_actor = self.plotter.add_mesh(plane, texture=texture, name="map", lighting=False, 
                                                    show_edges=False, opacity=self.map_opacity)
             self.map_actor.SetVisibility(self.map_visible)
             
@@ -199,7 +199,7 @@ class Viewer3D(QWidget):
         
         try:
             texture = pv.read_texture(os.path.abspath(texture_path))
-            self.map_actor = self.plotter.add_mesh(grid, texture=texture, name="map", lighting=True, 
+            self.map_actor = self.plotter.add_mesh(grid, texture=texture, name="map", lighting=False, 
                                                    show_edges=False, opacity=self.map_opacity)
             if self.fpv_renderer:
                 if self.fpv_map_actor:

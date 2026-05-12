@@ -4,6 +4,7 @@ from PIL import Image
 import io
 import os
 import numpy as np
+import hashlib
 
 class MapProvider:
     def __init__(self, cache_dir="map_cache"):
@@ -11,8 +12,23 @@ class MapProvider:
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir)
             
-        # ESRI Satellite Imagery
-        self.url_template = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        self.providers = {
+            "Satellite (ESRI)": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            "Street (OSM)": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+            "MapProxy / Custom": "" # User provided
+        }
+        self.current_provider = "Satellite (ESRI)"
+        self.custom_url = ""
+
+    def set_provider(self, provider_name, custom_url=""):
+        self.current_provider = provider_name
+        if provider_name == "MapProxy / Custom":
+            self.custom_url = custom_url
+
+    def get_url_template(self):
+        if self.current_provider == "MapProxy / Custom":
+            return self.custom_url
+        return self.providers.get(self.current_provider, self.providers["Satellite (ESRI)"])
 
     def latlon_to_tile(self, lat, lon, zoom):
         lat_rad = math.radians(lat)
@@ -29,19 +45,36 @@ class MapProvider:
         return lat_deg, lon_deg
 
     def fetch_tile(self, x, y, z):
-        cache_path = os.path.join(self.cache_dir, f"{z}_{x}_{y}.jpg")
+        url_template = self.get_url_template()
+        if not url_template:
+            return None
+            
+        # Use a provider-specific cache prefix to avoid mixing tiles
+        provider_prefix = self.current_provider.replace(" ", "_").replace("(", "").replace(")", "").replace("/", "_")
+        
+        # If it's a custom URL, append a hash of the URL so changing URLs fetches new tiles
+        if self.current_provider == "MapProxy / Custom":
+            url_hash = hashlib.md5(url_template.encode('utf-8')).hexdigest()[:8]
+            provider_prefix = f"{provider_prefix}_{url_hash}"
+            
+        cache_path = os.path.join(self.cache_dir, f"{provider_prefix}_{z}_{x}_{y}.jpg")
+        
         if os.path.exists(cache_path):
             return Image.open(cache_path)
-        
-        url = self.url_template.format(x=x, y=y, z=z)
+            
+        url = url_template.format(x=x, y=y, z=z)
         try:
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=10, headers={'User-Agent': 'INAV Flight View/1.0'})
             if response.status_code == 200:
-                img = Image.open(io.BytesIO(response.content))
+                img = Image.open(io.BytesIO(response.content)).convert('RGB')
                 img.save(cache_path)
                 return img
+        except requests.exceptions.RequestException as e:
+            if not getattr(self, '_connection_error_printed', False):
+                print(f"Connection failed for map provider '{self.current_provider}'. Ensure URL is correct and server is running.")
+                self._connection_error_printed = True
         except Exception as e:
-            print(f"Error fetching tile {x}, {y}, {z}: {e}")
+            print(f"Error processing tile {x}, {y}, {z}: {e}")
         return None
 
     def get_map(self, min_lat, max_lat, min_lon, max_lon, zoom=18, progress_callback=None):
@@ -65,12 +98,18 @@ class MapProvider:
             print("Area too large, reducing zoom...")
             return self.get_map(min_lat, max_lat, min_lon, max_lon, zoom - 1, progress_callback)
             
+        self._connection_error_printed = False
         full_img = Image.new('RGB', (width, height))
         
         pasted_count = 0
         for i, x in enumerate(range(x1, x2 + 1)):
             for j, y in enumerate(range(y1, y2 + 1)):
                 tile = self.fetch_tile(x, y, zoom)
+                
+                # Abort early if the connection failed, rather than timing out 70+ times
+                if getattr(self, '_connection_error_printed', False):
+                    raise ConnectionError(f"Could not connect to map provider '{self.current_provider}'.")
+                    
                 if tile:
                     full_img.paste(tile, (i * 256, j * 256))
                 
