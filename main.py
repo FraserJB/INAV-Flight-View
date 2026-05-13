@@ -1,3 +1,18 @@
+# Copyright (C) 2026 FraserJB
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import sys
 import os
 
@@ -60,6 +75,8 @@ from param_selector import ParameterSelector
 from rc_overlay import RCSticksWidget
 from flag_viewer import FlagViewer
 from custom_url_dialog import CustomUrlDialog
+from units_dialog import UnitsDialog
+from unit_utils import apply_units_to_df, DEFAULT_UNITS
 
 import matplotlib
 matplotlib.rcParams['font.size'] = 8
@@ -173,16 +190,13 @@ DEFAULT_PARAMS = [
     {"name": "Nav Pos East", "param": "navPos[1]", "desc": "Current East position relative to takeoff point (cm).", "unit": "cm", "color": "#ffffff", "plot": False},
     {"name": "Nav Target Hdg", "param": "navTgtHdg", "desc": "Target heading requested by the navigation controller.", "unit": "deg", "color": "#00ff00", "plot": False},
     {"name": "Active Waypoint", "param": "activeWpNumber", "desc": "The index of the currently targeted navigation waypoint.", "unit": "", "color": "#00ff00", "plot": False},
-    {"name": "RSSI", "param": "rssi", "desc": "Received Signal Strength Indicator (Radio link quality).", "unit": "", "color": "#00ff00", "plot": True, "trail": True},
 
     # Air & Environment
     {"name": "Airspeed", "param": "AirSpeed", "desc": "True speed relative to the surrounding air.", "unit": "m/s", "color": "#ffffff", "plot": False},
     {"name": "Wind North", "param": "wind[0]", "desc": "Estimated wind component from the North.", "unit": "m/s", "color": "#ffffff", "plot": False},
     {"name": "Wind East", "param": "wind[1]", "desc": "Estimated wind component from the East.", "unit": "m/s", "color": "#ffffff", "plot": False},
-    {"name": "IMU Temp", "param": "IMUTemperature", "desc": "Internal temperature of the flight controller IMU.", "unit": "C", "color": "#ff9900", "plot": False, "trail": True},
-    {"name": "Baro Temp", "param": "baroTemperature", "desc": "Internal temperature of the barometer sensor.", "unit": "C", "color": "#ffbb00", "plot": False},
     {"name": "ESC RPM", "param": "escRPM", "desc": "Motor rotations per minute reported by the ESC.", "unit": "RPM", "color": "#00ff00", "plot": False, "trail": True},
-    {"name": "ESC Temp", "param": "escTemperature", "desc": "Internal temperature of the ESC MOSFETs.", "unit": "C", "color": "#ff5555", "plot": False, "trail": True},
+    {"name": "ESC Temp", "param": "escTemperature", "desc": "Internal temperature of the ESC MOSFETs.", "unit": "°C", "color": "#ff5555", "plot": False, "trail": True},
 
     # PID & Control Rates
     {"name": "Roll Rate", "param": "axisRate[0]", "desc": "Actual angular rate on the roll axis.", "unit": "deg/s", "color": "#ff00ff", "plot": False},
@@ -365,6 +379,8 @@ class MainWindow(QMainWindow):
         self.current_idx = 0
         self.is_playing = False
         self.base_step = 1.0 # Rows per frame for 1x speed
+        self.unit_prefs = DEFAULT_UNITS.copy()
+        self.raw_df = None
         self.param_config = [dict(p) for p in DEFAULT_PARAMS] # Deep copy
         self.blackbox_decode_path = None
         
@@ -404,7 +420,8 @@ class MainWindow(QMainWindow):
 
             try:
                 self.data_parser = DataParser(file_path, decode_exe_path=self.blackbox_decode_path, progress_callback=update_progress)
-                self.df = self.data_parser.get_data()
+                self.raw_df = self.data_parser.get_data()
+                self.apply_units()
                 self.lbl_file.setText(os.path.basename(file_path))
                 
                 # Update Firmware Version Display and Selector
@@ -608,6 +625,13 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(self.lbl_nav)
         header_layout.addWidget(self.lbl_telemetry)
         header_layout.addStretch()
+        self.btn_set_units = QPushButton("Set Units")
+        self.btn_set_units.setFixedWidth(80)
+        self.btn_set_units.clicked.connect(self.open_units_dialog)
+        header_layout.addWidget(self.btn_set_units)
+        
+        header_layout.addSpacing(10)
+
         lbl_version = QLabel("Version:")
         lbl_version.setStyleSheet("color: #888888; font-size: 8.5pt;")
         header_layout.addWidget(lbl_version)
@@ -818,6 +842,32 @@ class MainWindow(QMainWindow):
         bottom_vbox.addWidget(self.lbl_time)
         
         main_layout.addWidget(bottom_panel)
+        
+        # Flight Stats Summary Bar (very bottom of window)
+        self.stats_bar = QWidget()
+        self.stats_bar.setObjectName("statsBar")
+        self.stats_bar.setStyleSheet("""
+            #statsBar {
+                background-color: #1a1a2e;
+                border-top: 1px solid #333;
+            }
+        """)
+        self.stats_bar.setMinimumHeight(24)
+        self.stats_bar.setVisible(False)
+        
+        stats_layout = QHBoxLayout(self.stats_bar)
+        stats_layout.setContentsMargins(12, 4, 12, 4)
+        stats_layout.setSpacing(0)
+        
+        self.lbl_flight_stats = QLabel("")
+        self.lbl_flight_stats.setWordWrap(True)
+        self.lbl_flight_stats.setStyleSheet(
+            "color: #cccccc; font-family: 'Consolas', 'Monaco', monospace; font-size: 8pt;"
+        )
+        stats_layout.addWidget(self.lbl_flight_stats)
+        
+        main_layout.addWidget(self.stats_bar)
+
 
     def load_config(self):
         """Loads persistent settings from defaults.cfg."""
@@ -853,6 +903,9 @@ class MainWindow(QMainWindow):
             if "blackbox_decode_path" in config:
                 self.blackbox_decode_path = config["blackbox_decode_path"]
             
+            if "units" in config:
+                self.unit_prefs.update(config["units"])
+                
             # 1. Restore Dropdowns & Checkboxes
             if "speed_index" in config:
                 self.speed_selector.setCurrentIndex(min(config["speed_index"], self.speed_selector.count()-1))
@@ -955,6 +1008,7 @@ class MainWindow(QMainWindow):
 
 
         config = {
+            "units": getattr(self, 'unit_prefs', DEFAULT_UNITS.copy()),
             "speed_index": self.speed_selector.currentIndex(),
             "version_index": self.version_selector.currentIndex(),
             "breadcrumbs": self.chk_ghost.isChecked(),
@@ -1019,6 +1073,168 @@ class MainWindow(QMainWindow):
         
         # Force application quit
         QApplication.instance().quit()
+
+    def apply_units(self):
+        if self.raw_df is not None:
+            self.df, self.param_config = apply_units_to_df(self.raw_df, self.param_config, self.unit_prefs)
+            
+            # Update the 3D path mesh FIRST so it matches the new df row count
+            # before any trail/scalar updates reference it
+            if hasattr(self, 'viewer_3d') and 'pos_x' in self.df.columns:
+                dist_unit = self.unit_prefs.get('Distance', 'm')
+                height_unit = self.unit_prefs.get('Height', 'm')
+                self.viewer_3d.update_grid_units(dist_unit, height_unit)
+                
+                points = self.df[['pos_x', 'pos_y', 'pos_z']].values
+                self.viewer_3d.set_path(points, reset_camera=False)
+            
+            # Now safe to update trail dropdown (which triggers path_param_changed)
+            self.update_trail_dropdown()
+            self.plot_widget.set_data(self.df)
+            self.plot_widget.update_params_config(self.param_config)
+            
+            # If map is already loaded or needs redraw, we should ideally trigger that but it runs automatically on update_display
+            
+            # Update flight stats bar
+            self.update_flight_stats()
+            
+    def update_flight_stats(self):
+        """Compute and display key flight statistics in the stats bar."""
+        if self.raw_df is None or self.df is None:
+            self.stats_bar.setVisible(False)
+            return
+        
+        from unit_utils import convert_value
+        dist_unit = self.unit_prefs.get('Distance', 'm')
+        height_unit = self.unit_prefs.get('Height', 'm')
+        speed_unit = self.unit_prefs.get('Speed', 'mph')
+        
+        raw = self.raw_df
+        stats = []
+        
+        # Helper to format with unit
+        def fmt(val, unit, decimals=1):
+            if val is None:
+                return "N/A"
+            return f"{val:.{decimals}f}{unit}"
+        
+        # --- Max Speed (GPS ground speed, raw is m/s) ---
+        if 'GPS_speed (m/s)' in raw.columns:
+            max_speed_ms = raw['GPS_speed (m/s)'].max()
+            conv, _ = convert_value(max_speed_ms, "Speed", "m/s", speed_unit)
+            stats.append(f"Max Spd: {fmt(conv, speed_unit)}")
+        
+        # --- Max Altitude (pos_z, raw is meters) ---
+        if 'pos_z' in raw.columns:
+            max_alt_m = raw['pos_z'].max()
+            conv, _ = convert_value(max_alt_m, "Height", "m", height_unit)
+            stats.append(f"Max Alt: {fmt(conv, height_unit)}")
+        
+        # --- Max Current Draw (amperage (A)) ---
+        if 'amperage (A)' in raw.columns:
+            max_current = raw['amperage (A)'].max()
+            stats.append(f"Max Current: {fmt(max_current, 'A')}")
+        
+        # --- Average Current Draw ---
+        if 'amperage (A)' in raw.columns:
+            avg_current = raw['amperage (A)'].mean()
+            stats.append(f"Avg Current: {fmt(avg_current, 'A')}")
+        
+        # --- Min Battery Voltage ---
+        if 'vbat (V)' in raw.columns:
+            min_vbat = raw['vbat (V)'].min()
+            stats.append(f"Min VBat: {fmt(min_vbat, 'V', 2)}")
+        
+        # --- Max Distance from Home (Euclidean XY) ---
+        if 'pos_x' in raw.columns and 'pos_y' in raw.columns:
+            dist_home = np.sqrt(raw['pos_x']**2 + raw['pos_y']**2)
+            max_dist_m = dist_home.max()
+            conv, _ = convert_value(max_dist_m, "Distance", "m", dist_unit)
+            stats.append(f"Max Dist from Home: {fmt(conv, dist_unit)}")
+        
+        # --- Downrange Distance (max extent on X axis, matches 3D grid) ---
+        if 'pos_x' in raw.columns:
+            downrange_m = raw['pos_x'].max() - raw['pos_x'].min()
+            conv, _ = convert_value(downrange_m, "Distance", "m", dist_unit)
+            stats.append(f"Total Downrange: {fmt(conv, dist_unit)}")
+        
+        # --- Crossrange Distance (max extent on Y axis, matches 3D grid) ---
+        if 'pos_y' in raw.columns:
+            crossrange_m = raw['pos_y'].max() - raw['pos_y'].min()
+            conv, _ = convert_value(crossrange_m, "Distance", "m", dist_unit)
+            stats.append(f"Total Crossrange: {fmt(conv, dist_unit)}")
+        
+        # --- Max G (Horizontal) — from accSmooth X/Y, INAV scale = 2048 LSB/G ---
+        if 'accSmooth[0]' in raw.columns and 'accSmooth[1]' in raw.columns:
+            g_hor = np.sqrt(raw['accSmooth[0]']**2 + raw['accSmooth[1]']**2) / 2048.0
+            stats.append(f"Max G(Horz): {g_hor.max():.2f}G")
+        
+        # --- Max G (Vertical) — from accSmooth Z, subtract 1G gravity ---
+        if 'accSmooth[2]' in raw.columns:
+            g_vert = (raw['accSmooth[2]'] / 2048.0 - 1.0).abs()
+            stats.append(f"Max G(Vert): {g_vert.max():.2f}G")
+        
+        # --- Min Satellites ---
+        if 'GPS_numSat' in raw.columns:
+            min_sats = int(raw['GPS_numSat'].min())
+            stats.append(f"Min Sats: {min_sats}")
+        
+        # --- Min RSSI ---
+        if 'rssi' in raw.columns:
+            min_rssi = int(raw['rssi'].min())
+            stats.append(f"Min RSSI: {min_rssi}")
+        
+        # --- Max RPM ---
+        if 'escRPM' in raw.columns:
+            max_rpm = int(raw['escRPM'].max())
+            stats.append(f"Max RPM: {max_rpm}")
+        # --- Total Distance Flown (cumulative path length) ---
+        if 'pos_x' in raw.columns and 'pos_y' in raw.columns and 'pos_z' in raw.columns:
+            dx = raw['pos_x'].diff().fillna(0)
+            dy = raw['pos_y'].diff().fillna(0)
+            dz = raw['pos_z'].diff().fillna(0)
+            total_dist_m = np.sqrt(dx**2 + dy**2 + dz**2).sum()
+            conv, _ = convert_value(total_dist_m, "Distance", "m", dist_unit)
+            stats.append(f"Total Dist: {fmt(conv, dist_unit)}")
+        
+        # --- Total Armed Time ---
+        if 'flightModeFlags (flags)' in raw.columns:
+            flags = raw['flightModeFlags (flags)'].astype(str)
+            armed_mask = flags.str.contains('ARM', na=False)
+            time_col = raw['time (us)']
+            dt = time_col.diff().fillna(0)
+            armed_us = dt[armed_mask].sum()
+            armed_s = armed_us / 1e6
+            am, as_ = divmod(armed_s, 60)
+            stats.append(f"Armed: {int(am)}m{int(as_)}s")
+        
+        # Build the display string
+        separator = "   \u2502   "  # │ character with spacing
+        stats_text = separator.join(stats)
+        
+        self.lbl_flight_stats.setText(stats_text)
+        self.stats_bar.setVisible(True)
+
+    def open_units_dialog(self):
+        dialog = UnitsDialog(current_prefs=self.unit_prefs, parent=self)
+        if dialog.exec():
+            self.unit_prefs = dialog.get_prefs()
+            self.save_config()
+            
+            # Re-apply units to the loaded data and refresh display
+            if self.raw_df is not None:
+                current_time = self.df['time (us)'].iloc[self.current_idx] if self.df is not None and len(self.df) > self.current_idx else 0
+                self.apply_units()
+                
+                # Update UI elements
+                self.update_display(self.current_idx)
+                if self.flag_viewer and self.flag_viewer.isVisible():
+                    self.flag_viewer.set_data(self.df)
+                    row = self.df.iloc[self.current_idx]
+                    self.flag_viewer.update_flags(row)
+                    
+                # Re-scale existing map if loaded (no re-download needed)
+                self._rescale_map()
 
     def apply_dark_theme(self):
         self.setStyleSheet("""
@@ -1335,13 +1551,39 @@ class MainWindow(QMainWindow):
         if not hasattr(self, 'data_parser'):
             return
             
-        # Convert map bounds to local XY
+        # Convert map bounds to local XY and store original meter values
         try:
             x_min, y_min = self.data_parser.latlon_to_local(map_bounds[0], map_bounds[2])
             x_max, y_max = self.data_parser.latlon_to_local(map_bounds[1], map_bounds[3])
-            self.viewer_3d.set_map(map_path, (x_min, x_max, y_min, y_max))
+            
+            # Store the meter-based bounds and texture path for re-scaling on unit change
+            self._map_bounds_m = (x_min, x_max, y_min, y_max)
+            self._map_texture_path = map_path
+            
+            # Apply unit conversion for distance if needed
+            self._apply_map_with_units(map_path, x_min, x_max, y_min, y_max)
         except Exception as e:
             print(f"Failed to apply map: {e}")
+
+    def _apply_map_with_units(self, map_path, x_min, x_max, y_min, y_max):
+        """Apply unit conversion to meter-based bounds and update the 3D map."""
+        dist_unit = self.unit_prefs.get('Distance', 'm')
+        if dist_unit != 'm':
+            from unit_utils import convert_value
+            x_min, _ = convert_value(x_min, 'Distance', 'm', dist_unit)
+            x_max, _ = convert_value(x_max, 'Distance', 'm', dist_unit)
+            y_min, _ = convert_value(y_min, 'Distance', 'm', dist_unit)
+            y_max, _ = convert_value(y_max, 'Distance', 'm', dist_unit)
+        self.viewer_3d.set_map(map_path, (x_min, x_max, y_min, y_max))
+
+    def _rescale_map(self):
+        """Re-scale the existing map texture to match current units without re-downloading."""
+        if hasattr(self, '_map_bounds_m') and hasattr(self, '_map_texture_path'):
+            x_min, x_max, y_min, y_max = self._map_bounds_m
+            try:
+                self._apply_map_with_units(self._map_texture_path, x_min, x_max, y_min, y_max)
+            except Exception as e:
+                print(f"Failed to rescale map: {e}")
 
     def on_map_opacity_changed(self, value):
         opacity = value / 100.0
@@ -1482,7 +1724,9 @@ class MainWindow(QMainWindow):
         is_throttle_frame = self.is_playing and (self._frame_counter % 2 != 0)
         
         if not is_throttle_frame:
-            self.lbl_telemetry.setText(f"X:{pos[0]:.1f} Y:{pos[1]:.1f} Z:{pos[2]:.1f}")
+            dist_unit = self.unit_prefs.get('Distance', 'm')
+            height_unit = self.unit_prefs.get('Height', 'm')
+            self.lbl_telemetry.setText(f"X:{pos[0]:.1f}{dist_unit} Y:{pos[1]:.1f}{dist_unit} Z:{pos[2]:.1f}{height_unit}")
             
             # Update Modes
             mode_flags = str(row.get('flightModeFlags (flags)', '---'))

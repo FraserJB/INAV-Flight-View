@@ -1,3 +1,18 @@
+# Copyright (C) 2026 FraserJB
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import os
 import sys
 import subprocess
@@ -122,6 +137,19 @@ class DataParser:
             self.df_merged['pos_y'] = 0.0
             self.df_merged['pos_z'] = self.df_merged.get('altitude_m', 0.0)
 
+        # Basic INAV deci-unit conversions
+        new_cols = {}
+        for col in ['attitude[0]', 'attitude[1]', 'attitude[2]']:
+            if col in self.df_merged.columns:
+                new_cols[col] = self.df_merged[col] / 10.0
+                
+        for temp_col in ['IMUTemperature', 'baroTemperature', 'escTemperature']:
+            if temp_col in self.df_merged.columns:
+                new_cols[temp_col] = self.df_merged[temp_col] / 10.0
+                
+        if new_cols:
+            self.df_merged = self.df_merged.assign(**new_cols)
+
     def merge_gps_data(self):
         """Merges GPS data into the main dataframe using interpolation."""
         # Clean columns names for easier access
@@ -170,11 +198,6 @@ class DataParser:
         new_cols['pos_x'] = R * (lon - self.ref_lon) * np.cos(self.ref_lat)
         new_cols['pos_y'] = R * (lat - self.ref_lat)
         new_cols['pos_z'] = alt - ref_alt
-        
-        # Convert attitude from decidegrees to degrees
-        new_cols['attitude[0]'] = self.df_merged['attitude[0]'] / 10.0
-        new_cols['attitude[1]'] = self.df_merged['attitude[1]'] / 10.0
-        new_cols['attitude[2]'] = self.df_merged['attitude[2]'] / 10.0
         
         # Apply all at once
         self.df_merged = self.df_merged.assign(**new_cols)

@@ -43,3 +43,8 @@ Logfiles/
 current_map.jpg
 all.log
 crash.log
+
+# Temporary and Test files
+scratch/
+test.png
+test_*.jpg

@@ -1,3 +1,18 @@
+# Copyright (C) 2026 FraserJB
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import os
 import pyvista as pv
 from pyvistaqt import QtInteractor
@@ -45,7 +60,21 @@ class Viewer3D(QWidget):
         takeoff_marker = pv.Sphere(radius=1.0, center=(0, 0, 0))
         self.plotter.add_mesh(takeoff_marker, color="red", name="takeoff")
         
-        self.plotter.show_grid(color="#444444", xtitle="Downrange (m)", ytitle="Crossrange (m)", ztitle="Height (m)", font_size=10)
+        self.dist_unit = "m"
+        self.height_unit = "m"
+        self._refresh_grid()
+
+    def update_grid_units(self, dist_unit, height_unit):
+        self.dist_unit = dist_unit
+        self.height_unit = height_unit
+        self._refresh_grid()
+
+    def _refresh_grid(self):
+        self.plotter.show_grid(color="#444444", 
+                               xtitle=f"Downrange ({self.dist_unit})", 
+                               ytitle=f"Crossrange ({self.dist_unit})", 
+                               ztitle=f"Height ({self.height_unit})", 
+                               font_size=10)
 
     def set_path(self, points, reset_camera=True):
         """Sets the full flight path points (N, 3)."""
@@ -75,7 +104,7 @@ class Viewer3D(QWidget):
         
         self.path_actor = self.plotter.add_mesh(self.path_mesh, scalars="scalars", cmap="viridis", 
                                                 line_width=4, name="path", render_lines_as_tubes=True,
-                                                scalar_bar_args={'title': 'Altitude (m)', 'fmt': '%.1f', 
+                                                scalar_bar_args={'title': 'Altitude', 'fmt': '%.1f', 
                                                                'bold': True, 'shadow': False,
                                                                'label_font_size': 10, 'title_font_size': 12})
         
@@ -90,10 +119,10 @@ class Viewer3D(QWidget):
         
         if not reset_camera:
             old_cam = self.plotter.camera.copy()
-            self.plotter.show_grid(color="#444444", xtitle="Downrange (m)", ytitle="Crossrange (m)", ztitle="Height (m)", font_size=10)
+            self._refresh_grid()
             self.plotter.camera = old_cam
         else:
-            self.plotter.show_grid(color="#444444", xtitle="Downrange (m)", ytitle="Crossrange (m)", ztitle="Height (m)", font_size=10)
+            self._refresh_grid()
             self.plotter.reset_camera()
             self.plotter.view_isometric()
 
@@ -172,10 +201,10 @@ class Viewer3D(QWidget):
             # Refresh grid and preserve camera if requested
             if not reset_camera:
                 old_cam = self.plotter.camera.copy()
-                self.plotter.show_grid(color="#444444", xtitle="Downrange (m)", ytitle="Crossrange (m)", ztitle="Height (m)", font_size=10)
+                self._refresh_grid()
                 self.plotter.camera = old_cam
             else:
-                self.plotter.show_grid(color="#444444", xtitle="Downrange (m)", ytitle="Crossrange (m)", ztitle="Height (m)", font_size=10)
+                self._refresh_grid()
                 self.plotter.reset_camera()
                 self.plotter.view_isometric()
         except Exception as e:
@@ -216,10 +245,10 @@ class Viewer3D(QWidget):
                 self.fpv_map_actor.SetVisibility(self.map_visible)
             if not reset_camera:
                 old_cam = self.plotter.camera.copy()
-                self.plotter.show_grid(color="#444444", xtitle="Downrange (m)", ytitle="Crossrange (m)", ztitle="Height (m)", font_size=10)
+                self._refresh_grid()
                 self.plotter.camera = old_cam
             else:
-                self.plotter.show_grid(color="#444444", xtitle="Downrange (m)", ytitle="Crossrange (m)", ztitle="Height (m)", font_size=10)
+                self._refresh_grid()
                 self.plotter.reset_camera()
                 self.plotter.view_isometric()
         except Exception as e:
