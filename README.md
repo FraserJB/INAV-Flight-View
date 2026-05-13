@@ -7,10 +7,9 @@ INAV Flight View: Advanced Blackbox Telemetry Visualization
  
 INAV Flight View is a high-performance, intuitive forensic tool designed for pilots who demand deep insights into their flight data without the complexity of traditional log analyzers. Engineered for both stability and visual excellence, it transforms raw Blackbox telemetry into a rich, interactive 3D environment, allowing you to relive every maneuver with surgical precision.
  
-<img width="1890" height="1048" alt="image" src="https://github.com/user-attachments/assets/a3e27c4d-3dd1-456c-a482-a544302a8aed" />
+<img width="1869" height="1081" alt="image" src="https://github.com/user-attachments/assets/c082da2f-6e13-42af-95f9-a96cc8b47133" />
 
-Note: Maps are downloaded from ESRI World Imagery, Free for Non-Commercial Use.
- 
+
  
 Key Features:
 * Immersive 3D Reconstruction: Experience your flight path in a fully rotatable OpenGL-based viewer, complete with real-time attitude tracking and terrain-mapped navigation.
@@ -24,3 +23,34 @@ Key Features:
 
 
 Whether you are tuning PIDs, diagnosing erratic behavior, or simply showcasing your latest long-range mission, INAV Flight View provides a powerful, premium interface that makes professional-grade telemetry analysis accessible to everyone.
+
+Quick Start
+INAV Flight View is distributed as a zero-install portable application.
+
+1) Download the latest INAV-Flight-View-vXX.zip.
+2) Extract the folder to your preferred location.
+3) Run INAV Flight View.exe.
+4) Open your lofgile.txt
+
+
+
+---------------------
+ESRI and other maps sources are free for Non-Commercial Use, for Commercial use plesse check the provider Terms and Conditions.
+
+
+Open Source License
+--------------------
+INAV Flight View is committed to the open-source spirit of the FPV community.
+
+This project is licensed under the GNU General Public License v3.0 (GPLv3).
+
+Free to Use: You can run this software for any purpose.
+Free to Study: You can access and change the source code.
+Free to Share: You can redistribute copies to help others.
+Copyleft Protection: If you modify the software and share it, those changes must also be released under the same GPLv3 license, ensuring the tool remains free for everyone forever.
+NOTE
+
+For the full legal text, please refer to the 
+
+LICENSE
+ file included in this repository.
