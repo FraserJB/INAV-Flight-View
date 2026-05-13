@@ -594,7 +594,8 @@ class MainWindow(QMainWindow):
         self.lbl_telemetry.setStyleSheet("color: #888888; font-family: 'Consolas', 'Monaco', monospace; font-size: 8.5pt;")
         
         self.lbl_time = QLabel("00:00:00")
-        self.lbl_time.setStyleSheet("font-family: 'Consolas', 'Monaco', monospace; font-size: 14pt;")
+        self.lbl_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_time.setStyleSheet("font-family: 'Consolas', 'Monaco', monospace; font-size: 11pt; color: #00aaff;")
         
         self.speed_selector = QComboBox()
         self.speed_selector.addItems(["0.1x", "0.2x", "0.5x", "1x", "2x", "5x", "8x", "10x", "12x", "16x", "24x", "32x", "64x"])
@@ -837,8 +838,6 @@ class MainWindow(QMainWindow):
         bottom_vbox.addLayout(controls_layout)
         
         # Centered time label at bottom of playback panel
-        self.lbl_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_time.setStyleSheet("font-family: 'Consolas', 'Monaco', monospace; font-size: 11pt; color: #00aaff;")
         bottom_vbox.addWidget(self.lbl_time)
         
         main_layout.addWidget(bottom_panel)
@@ -853,7 +852,7 @@ class MainWindow(QMainWindow):
             }
         """)
         self.stats_bar.setMinimumHeight(24)
-        self.stats_bar.setVisible(False)
+        self.stats_bar.setVisible(True)
         
         stats_layout = QHBoxLayout(self.stats_bar)
         stats_layout.setContentsMargins(12, 4, 12, 4)
@@ -1101,7 +1100,7 @@ class MainWindow(QMainWindow):
     def update_flight_stats(self):
         """Compute and display key flight statistics in the stats bar."""
         if self.raw_df is None or self.df is None:
-            self.stats_bar.setVisible(False)
+            self.lbl_flight_stats.setText("")
             return
         
         from unit_utils import convert_value
@@ -1213,7 +1212,8 @@ class MainWindow(QMainWindow):
         stats_text = separator.join(stats)
         
         self.lbl_flight_stats.setText(stats_text)
-        self.stats_bar.setVisible(True)
+        # Force a layout refresh to prevent rendering artifacts
+        self.centralWidget().update()
 
     def open_units_dialog(self):
         dialog = UnitsDialog(current_prefs=self.unit_prefs, parent=self)
