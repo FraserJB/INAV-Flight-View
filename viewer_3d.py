@@ -59,6 +59,17 @@ class Viewer3D(QWidget):
         self.plotter.add_axes(line_width=2, labels_off=False)
         self.plotter.view_isometric()
         
+        # Add persistent attribution text (Bottom Right)
+        self.attribution_text = "Map data: ESRI, OSM, Mapzen, OpenTopoData, Open-Elevation"
+        self.attribution_actor = self.plotter.add_text(
+            self.attribution_text, 
+            position='lower_right', 
+            font_size=8, 
+            color='gray', 
+            shadow=True,
+            name="attribution"
+        )
+        
         # Add a small takeoff marker
         takeoff_marker = pv.Sphere(radius=1.0, center=(0, 0, 0))
         self.plotter.add_mesh(takeoff_marker, color="red", name="takeoff")
