@@ -49,6 +49,8 @@ ESRI and other map sources are free for non-commercial use. For commercial use, 
 ### ⚖️ License
 **INAV Flight View** is open-source software licensed under the **GNU General Public License v3.0 (GPLv3)**.
 
+**Copyright (C) 2026 Fraser Boyd**
+
 > [!IMPORTANT]
 > This project is committed to the open-source spirit of the flight controller community. By using the GPLv3, we ensure that the software remains free for all users and that any future improvements made by the community are shared back under the same open terms.
 
