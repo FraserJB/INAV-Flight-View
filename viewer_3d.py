@@ -14,10 +14,13 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import os
+import hashlib
 import pyvista as pv
 from pyvistaqt import QtInteractor
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
+from PyQt6.QtCore import pyqtSignal, QEvent, Qt, QTimer
 import numpy as np
+from PIL import Image, ImageEnhance
 from mesh_utils import create_aircraft_mesh
 
 class Viewer3D(QWidget):
@@ -75,6 +78,45 @@ class Viewer3D(QWidget):
                                ytitle=f"Crossrange ({self.dist_unit})", 
                                ztitle=f"Height ({self.height_unit})", 
                                font_size=10)
+
+    @staticmethod
+    def _clamp(value, min_value, max_value):
+        return max(min_value, min(max_value, value))
+
+    def _prepare_map_texture(self, texture_path):
+        """Normalize bright/dark map textures so scene lighting cannot wash them out."""
+        abs_path = os.path.abspath(texture_path)
+        try:
+            img = Image.open(abs_path).convert("RGB")
+            arr = np.asarray(img, dtype=np.float32) / 255.0
+            luminance = (arr[:, :, 0] * 0.2126) + (arr[:, :, 1] * 0.7152) + (arr[:, :, 2] * 0.0722)
+            mean = float(np.mean(luminance))
+            std = float(np.std(luminance))
+
+            # Bring very bright street/topo maps down and lift very dark imagery
+            # slightly, while preserving mid-tone satellite maps.
+            if mean > 0.68:
+                target_mean = 0.56
+            elif mean < 0.32:
+                target_mean = 0.40
+            else:
+                target_mean = mean
+
+            brightness = Viewer3D._clamp(target_mean / max(mean, 0.01), 0.55, 1.35)
+            contrast = Viewer3D._clamp(0.24 / max(std, 0.08), 1.0, 1.35)
+
+            adjusted = ImageEnhance.Brightness(img).enhance(brightness)
+            adjusted = ImageEnhance.Contrast(adjusted).enhance(contrast)
+
+            cache_key = hashlib.md5(f"{abs_path}_{os.path.getmtime(abs_path):.6f}_{brightness:.3f}_{contrast:.3f}".encode()).hexdigest()[:10]
+            cache_dir = "map_cache"
+            if not os.path.exists(cache_dir):
+                os.makedirs(cache_dir)
+            out_path = os.path.join(cache_dir, f"current_map_render_{cache_key}.jpg")
+            adjusted.save(out_path, quality=92)
+            return out_path
+        except Exception:
+            return abs_path
 
     def set_path(self, points, reset_camera=True):
         """Sets the full flight path points (N, 3)."""
@@ -176,7 +218,7 @@ class Viewer3D(QWidget):
         )
         
         try:
-            texture = pv.read_texture(os.path.abspath(texture_path))
+            texture = pv.read_texture(self._prepare_map_texture(texture_path))
             # Use lighting=False so map textures show their true colors and don't get blown out
             self.map_actor = self.plotter.add_mesh(plane, texture=texture, name="map", lighting=False, 
                                                    show_edges=False, opacity=self.map_opacity)
@@ -227,7 +269,7 @@ class Viewer3D(QWidget):
         grid.texture_map_to_plane(inplace=True)
         
         try:
-            texture = pv.read_texture(os.path.abspath(texture_path))
+            texture = pv.read_texture(self._prepare_map_texture(texture_path))
             self.map_actor = self.plotter.add_mesh(grid, texture=texture, name="map", lighting=False, 
                                                    show_edges=False, opacity=self.map_opacity)
             if self.fpv_renderer:
