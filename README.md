@@ -1,3 +1,9 @@
+
+NOTICE: There is an updated version of this software supporting BOTH Ardupilot and INAV:
+
+Get it here: [RC Flight View](https://github.com/FraserJB/RC-Flight-View/tree/master)
+
+------------------------------------------
   
   
 INAV Flight View: Advanced Blackbox Telemetry Visualization
